@@ -26,8 +26,16 @@ class Worker(object):
         self.__branch_name = None
         self.__branch_has_commits = False
 
-    def do_work(self):
-        if self.__branch:
+    def do_work(self, work_id):
+        if 0 == work_id:
+            self.__commit("Initial commit")
+        elif self.__branch:
+            # Switch to working branch..
+            if self.__branch_name:
+                subprocess.call(["git", "checkout", self.__branch_name])
+            else:
+                subprocess.call(["git", "checkout", "master"])
+
             action = random.randint(0, 6)
             if 2 > action and self.__branch_action_possible():
                 self.__branch_action()
@@ -42,6 +50,7 @@ class Worker(object):
         logging.debug("  ..worker #%d is doing nothing.", self.__worker_id)
 
     def __branch_action_possible(self):
+        # TODO: ensure that master has commits..
         return self.__branch_has_commits or not self.__branch_name
 
     def __branch_action(self):
@@ -49,18 +58,26 @@ class Worker(object):
         if not self.__branch_name:
             logging.debug("  ..worker #%d would branch.", self.__worker_id)
             self.__branch_name = "Worker%dTopicBranch" % self.__worker_id
+            subprocess.call(["git", "checkout", "-b", self.__branch_name])
         else:
             logging.debug("  .. worker #%d would merge.", self.__worker_id)
+            subprocess.call(["git", "checkout", "master"])
+            subprocess.call(["git", "merge", "-m", "Merging %s with master." %
+                             self.__branch_name, self.__branch_name])
+            subprocess.call(["git", "branch", "-d", self.__branch_name])
             self.__branch_has_commits = False
             self.__branch_name = None
 
-    def __commit(self):
+    def __commit(self, commit_msg="This should be random"):
         self.__switch_worker()
 
         logging.debug("  ..worker #%d is doing some work.", self.__worker_id)
 
         with open("Worker%dFile" % self.__worker_id, "a") as fil:
             fil.write("Writing a line at %s\n" % time.ctime())
+
+        subprocess.call(["git", "add", "Worker%dFile" % self.__worker_id])
+        subprocess.call(["git", "commit", "-m", "'%s'" % commit_msg])
 
         if self.__branch_name:
             self.__branch_has_commits = True
@@ -69,6 +86,8 @@ class Worker(object):
         name = "John Doe #%d" % self.__worker_id
         email = "johndoe%d@localhost" % self.__worker_id
         logging.debug("  ..switching to committer <%s, %s>", name, email)
+        subprocess.call(["git", "config", "user.name", name])
+        subprocess.call(["git", "config", "user.email", email])
 
 
 def setup_logging(args):
@@ -129,8 +148,10 @@ def start_working(actions):
     for i in range(0, actions):
         logging.debug("..performing action %d.", i)
         worker = WORKER_QUEUE.pop(0)
-        worker.do_work()
+        worker.do_work(i)
         WORKER_QUEUE.append(worker)
+
+    subprocess.call(["git", "checkout", "master"])
 
 
 def main():
